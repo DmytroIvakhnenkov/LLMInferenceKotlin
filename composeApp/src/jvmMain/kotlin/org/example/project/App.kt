@@ -11,11 +11,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import org.example.project.LlamaJni.generateNextToken
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Composable
 @Preview
 fun App() {
+
+
     MaterialTheme {
         var inputText by remember { mutableStateOf(TextFieldValue("")) }
 
@@ -61,12 +67,14 @@ fun App() {
                 }
             }
 
+            val listState = rememberLazyListState()
+
             // Messages list
-            Column(
+            LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.Top
+                state = listState,
             ) {
-                for (message in messages) {
+                items(messages as List<Message>) { message ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = if (message.sender == Sender.USER) Arrangement.End else Arrangement.Start
@@ -86,9 +94,22 @@ fun App() {
                     }
                 }
             }
+
+
+            // Automatically scroll to the bottom when new messages are added
+            LaunchedEffect(messages.size) {
+                if (messages.isNotEmpty()) {
+                    listState.animateScrollToItem(messages.lastIndex)
+                }
+            }
+
+
+
         }
     }
 }
+
+
 
 // Message sender enum
 enum class Sender {
@@ -100,5 +121,8 @@ data class Message(val text: String, val sender: Sender)
 
 // Dummy LLM function
 fun dummySendFunction(input: String): String {
-    return "Hello, I am Koli"
+    val nextToken  = generateNextToken(LlamaJni.ctxPointer, input)
+
+    return nextToken
 }
+
