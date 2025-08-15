@@ -6,7 +6,8 @@ Version: 0.0.1
 
 ![App Screenshot](img.png)
 
-###Task List
+###  Task List
+
 1. [] Integrate Chat Template from llama.cpp.
 2. [] Add an option to load different models.
 3. [] Add chat history.
