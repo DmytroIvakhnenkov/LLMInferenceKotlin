@@ -1,18 +1,14 @@
-This is a Kotlin Multiplatform project targeting Desktop (JVM).
-
-- [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
-
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
-
 UI for LLM inference written in Kotlin
 
-Version: 0.0.0
+Made to test the limits of Koltin and for my own enjoyment :)
+
+Version: 0.0.1
 
 ![App Screenshot](img.png)
+
+###Task List
+1. [] Integrate Chat Template from llama.cpp.
+2. [] Add an option to load different models.
+3. [] Add chat history.
+4. [] Figure out how to distribute a linux binary.
+5. [] Figure out how to distribute a windows binary.
