@@ -16,6 +16,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import org.jetbrains.compose.ui.tooling.preview.Preview
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 
 @Composable
 @Preview
@@ -126,3 +133,10 @@ fun dummySendFunction(input: String): String {
     return nextToken
 }
 
+fun startLlamaStreaming(prompt: String) {
+    LlamaJni.generateNextTokenStream(LlamaJni.ctxPointer, prompt) { token ->
+        runOnUiThread {
+            textView.append(token)
+        }
+    }
+}
