@@ -4,12 +4,12 @@ Made to test the limits of Koltin and for my own enjoyment :)
 
 Version: 0.0.1
 
-![App Screenshot](img.png)
+![img_1.png](img_1.png)
 
 ###  Task List
 
 1. [x] Integrate Chat Template from llama.cpp.
-2. [x![img_1.png](img_1.png)] Integrate Streaming. 
+2. [x] Integrate Streaming. 
 3. [ ] Add an option to load different models.
 4. [ ] Add chat history.
 5. [ ] Figure out how to distribute a linux binary.
