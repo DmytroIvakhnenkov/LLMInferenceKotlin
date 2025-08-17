@@ -1,3 +1,4 @@
+
 package org.example.project
 
 import androidx.compose.foundation.background
@@ -15,26 +16,69 @@ import org.example.project.LlamaJni.generateNextToken
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.plus
 
 @Composable
 @Preview
 fun App() {
-
-
     MaterialTheme {
         var inputText by remember { mutableStateOf(TextFieldValue("")) }
+        var messages by remember { mutableStateOf(listOf<Message>()) }
+        var isStreaming by remember { mutableStateOf(false) }
 
-        // Track messages with sender info
-        val messages = remember { mutableStateListOf<Message>() }
+        // Key that only changes when user sends a message, not when LLM messages update
+        val userMessageCount = messages.count { it.sender == Sender.USER }
 
+        // This LaunchedEffect only triggers when a new USER message is added
+        LaunchedEffect(userMessageCount) {
+            // Only start streaming if we have user messages and we're not already streaming
+            val lastUserMessage = messages.lastOrNull { it.sender == Sender.USER }
+            if (lastUserMessage != null && !isStreaming) {
+                isStreaming = true
+
+                // Add empty LLM message that will be updated
+                messages = messages + Message("", Sender.LLM)
+                val llmMessageIndex = messages.lastIndex
+
+                try {
+                    var accumulatedText = ""
+                    streamTokensBufferedV2(lastUserMessage.text, paceMs = 50).collect { token ->
+                        accumulatedText += token
+
+                        // Update the LLM message in place
+                        messages = messages.toMutableList().also { messageList ->
+                            if (llmMessageIndex < messageList.size) {
+                                messageList[llmMessageIndex] = Message(accumulatedText, Sender.LLM)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("Streaming error: ${e.message}")
+                    // Optionally update the message with error info
+                    messages = messages.toMutableList().also { messageList ->
+                        if (llmMessageIndex < messageList.size) {
+                            messageList[llmMessageIndex] = Message("Error: ${e.message}", Sender.LLM)
+                        }
+                    }
+                } finally {
+                    isStreaming = false
+                }
+            }
+        }
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.primaryContainer)
@@ -56,21 +100,24 @@ fun App() {
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(20.dp)),
-                    placeholder = { Text("Enter message") }
+                    placeholder = { Text("Enter message") },
+                    enabled = !isStreaming // Disable input while streaming
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (inputText.text.isNotBlank()) {
-                            // Add user message
-                            messages.add(Message(inputText.text, Sender.USER))
-                            // Add LLM response
-                            messages.add(Message(dummySendFunction(inputText.text), Sender.LLM))
-                            inputText = TextFieldValue("") // Clear input
+                        if (inputText.text.isNotBlank() && !isStreaming) {
+                            messages = messages + Message(inputText.text, Sender.USER)
+                            inputText = TextFieldValue("")
                         }
-                    }
+                    },
+                    enabled = !isStreaming && inputText.text.isNotBlank()
                 ) {
-                    Text("Send")
+                    if (isStreaming) {
+                        Text("Streaming...")
+                    } else {
+                        Text("Send")
+                    }
                 }
             }
 
@@ -81,7 +128,7 @@ fun App() {
                 modifier = Modifier.fillMaxWidth(),
                 state = listState,
             ) {
-                items(messages as List<Message>) { message ->
+                items(messages, key = { "${it.sender}-${messages.indexOf(it)}" }) { message ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = if (message.sender == Sender.USER) Arrangement.End else Arrangement.Start
@@ -96,27 +143,24 @@ fun App() {
                                 )
                                 .padding(horizontal = 16.dp, vertical = 10.dp)
                         ) {
-                            Text(message.text, color = Color.Black)
+                            Text(
+                                text = if (message.text.isEmpty() && isStreaming) "..." else message.text,
+                                color = Color.Black
+                            )
                         }
                     }
                 }
             }
 
-
-            // Automatically scroll to the bottom when new messages are added
-            LaunchedEffect(messages.size) {
+            // Automatically scroll to the bottom when messages are updated
+            LaunchedEffect(messages) {
                 if (messages.isNotEmpty()) {
                     listState.animateScrollToItem(messages.lastIndex)
                 }
             }
-
-
-
         }
     }
 }
-
-
 
 // Message sender enum
 enum class Sender {
@@ -126,17 +170,64 @@ enum class Sender {
 // Message model
 data class Message(val text: String, val sender: Sender)
 
-// Dummy LLM function
-fun dummySendFunction(input: String): String {
-    val nextToken  = generateNextToken(LlamaJni.ctxPointer, input)
+// Improved streaming function with independent coroutine scope
+fun streamTokensBufferedV2(prompt: String, paceMs: Long = 50): Flow<String> = callbackFlow {
+    val tokenBuffer = Channel<String>(Channel.UNLIMITED)
 
-    return nextToken
-}
+    // Use independent scope that won't be cancelled by Compose recomposition
+    val independentScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-fun startLlamaStreaming(prompt: String) {
-    LlamaJni.generateNextTokenStream(LlamaJni.ctxPointer, prompt) { token ->
-        runOnUiThread {
-            textView.append(token)
+    // Launch JNI generation in independent scope
+    val generationJob = independentScope.launch {
+        try {
+            println("Starting JNI generation for prompt: $prompt")
+            LlamaJni.generateNextTokenStream(LlamaJni.ctxPointer, prompt) { token: String ->
+                println("Received token from JNI: '$token'")
+                val result = tokenBuffer.trySend(token)
+                if (result.isFailure) {
+                    println("Failed to send token to buffer: ${result.exceptionOrNull()}")
+                }
+            }
+            println("JNI generation completed")
+        } catch (e: Exception) {
+            println("Error in JNI generation: ${e.message}")
+            // Send error to flow
+            trySend("Error: ${e.message}")
+        } finally {
+            // Send completion signal
+            println("Closing token buffer")
+            tokenBuffer.close()
+        }
+    }
+
+    // Consume tokens with controlled pace in independent scope
+    val consumerJob = independentScope.launch {
+        try {
+            tokenBuffer.consumeEach { token ->
+                println("Emitting token to flow: '$token'")
+                // Use channel's trySend instead of flow's trySend to avoid compose scope issues
+                val sent = trySend(token)
+                if (sent.isFailure) {
+                    println("Failed to emit token: ${sent.exceptionOrNull()}")
+                }
+                delay(paceMs)
+            }
+            println("Token consumption completed")
+        } catch (e: Exception) {
+            println("Error in token consumption: ${e.message}")
+        } finally {
+            // Close the flow when buffer is consumed
+            close()
+        }
+    }
+
+    awaitClose {
+        println("Cleaning up streaming resources")
+        generationJob.cancel()
+        consumerJob.cancel()
+        independentScope.cancel()
+        if (!tokenBuffer.isClosedForSend) {
+            tokenBuffer.close()
         }
     }
 }

@@ -15,14 +15,16 @@ object LlamaJni {
 
     external fun loadCtx(path: String): Long
     external fun generateNextToken(ctxPtr: Long, prompt: String): String
+    external fun generateNextTokenStream(ctxPtr: Long, prompt: String, onToken: (String) -> Unit): Unit
 
-    val ctxPointer = loadCtx("/home/dmytro/llama.cpp/Qwen3-1.7B-Q8_0.gguf")
+    val ctxPointer = loadCtx("/home/dmytro/llama.cpp/Qwen3-32B-Q4_K_M.gguf")
+
 
 
 }
 
 fun main() = application {
-
+    LlamaJni.ctxPointer
 //    cleanUpLlama(modelPointer, ctxPtr)
     Window(
         onCloseRequest = ::exitApplication,
